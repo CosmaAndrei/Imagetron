@@ -17,7 +17,7 @@ import java.io.IOException;
 public class ImageProcessingServiceImpl implements ImageProcessingService {
     @Override
     public File blurImage(File image) throws IOException {
-        BufferedImage buffered = UtilImageIO.loadImage(UtilIO.pathExample("standard/kodim17.jpg"));
+        BufferedImage buffered = ImageIO.read(image);
         Planar<GrayU8> input = ConvertBufferedImage.convertFrom(buffered, true, ImageType.pl(3, GrayU8.class));
         Planar<GrayU8> blurred = input.createSameShape();
         // size of the blur kernel. square region with a width of radius*2 + 1
