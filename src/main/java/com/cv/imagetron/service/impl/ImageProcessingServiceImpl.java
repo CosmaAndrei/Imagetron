@@ -2,14 +2,29 @@ package com.cv.imagetron.service.impl;
 
 import boofcv.abst.denoise.FactoryImageDenoise;
 import boofcv.abst.denoise.WaveletDenoiseFilter;
+import boofcv.alg.distort.*;
+import boofcv.alg.distort.pinhole.LensDistortionPinhole;
+import boofcv.alg.distort.universal.LensDistortionUniversalOmni;
 import boofcv.alg.filter.blur.GBlurImageOps;
+import boofcv.alg.interpolate.InterpolatePixel;
+import boofcv.alg.interpolate.InterpolationType;
+import boofcv.factory.distort.FactoryDistort;
+import boofcv.factory.interpolate.FactoryInterpolation;
+import boofcv.io.UtilIO;
+import boofcv.io.calibration.CalibrationIO;
 import boofcv.io.image.ConvertBufferedImage;
 import boofcv.io.image.UtilImageIO;
+import boofcv.struct.border.BorderType;
+import boofcv.struct.calib.CameraPinhole;
+import boofcv.struct.calib.CameraUniversalOmni;
 import boofcv.struct.image.GrayF32;
 import boofcv.struct.image.GrayU8;
 import boofcv.struct.image.ImageType;
 import boofcv.struct.image.Planar;
 import com.cv.imagetron.service.def.ImageProcessingService;
+import georegression.geometry.ConvertRotation3D_F32;
+import georegression.struct.EulerType;
+import org.apache.commons.lang3.tuple.Pair;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -64,7 +79,54 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
     }
 
     @Override
-    public File convertToFishEye(File image) {
-        return null;
+    public Pair<File, File> convertToFishEyeToPineHole(File image) throws IOException {
+        // Path to image data and calibration data
+        String fisheyePath = UtilIO.pathExample("fisheye/theta/");
+
+        // load the fisheye camera parameters
+        CameraUniversalOmni fisheyeModel = CalibrationIO.load(new File(fisheyePath, "front.yaml"));
+
+        // Specify what the pinhole camera should look like
+        CameraPinhole pinholeModel = new CameraPinhole(400, 400, 0, 300, 300, 600, 600);
+
+        // Create the transform from pinhole to fisheye views
+        LensDistortionNarrowFOV pinholeDistort = new LensDistortionPinhole(pinholeModel);
+        LensDistortionWideFOV fisheyeDistort = new LensDistortionUniversalOmni(fisheyeModel);
+        NarrowToWidePtoP_F32 transform = new NarrowToWidePtoP_F32(pinholeDistort, fisheyeDistort);
+
+        // Load fisheye RGB image
+        BufferedImage bufferedFisheye = ImageIO.read(image);
+        Planar<GrayU8> fisheyeImage = ConvertBufferedImage.convertFrom(
+                bufferedFisheye, true, ImageType.pl(3, GrayU8.class));
+
+        // Create the image distorter which will render the image
+        InterpolatePixel<Planar<GrayU8>> interp = FactoryInterpolation.
+                createPixel(0, 255, InterpolationType.BILINEAR, BorderType.ZERO, fisheyeImage.getImageType());
+        ImageDistort<Planar<GrayU8>, Planar<GrayU8>> distorter =
+                FactoryDistort.distort(false, interp, fisheyeImage.getImageType());
+
+        // Pass in the transform created above
+        distorter.setModel(new PointToPixelTransform_F32(transform));
+
+        // Render the image.  The camera will have a rotation of 0 and will thus be looking straight forward
+        Planar<GrayU8> pinholeImage = fisheyeImage.createNew(pinholeModel.width, pinholeModel.height);
+
+        distorter.apply(fisheyeImage, pinholeImage);
+        BufferedImage bufferedPinhole0 = ConvertBufferedImage.convertTo(pinholeImage, null, true);
+
+        // rotate the virtual pinhole camera to the right
+        transform.setRotationWideToNarrow(ConvertRotation3D_F32.eulerToMatrix(EulerType.YXZ, 0.8f, 0, 0, null));
+
+        distorter.apply(fisheyeImage, pinholeImage);
+        BufferedImage bufferedPinhole1 = ConvertBufferedImage.convertTo(pinholeImage, null, true);
+
+
+        File left = new File("fishEyeImage.png");
+        ImageIO.write(bufferedPinhole0, "png", left);
+
+        File right = new File("fishEyeImage.png");
+        ImageIO.write(bufferedPinhole1, "png", right);
+
+        return Pair.of(left, right);
     }
 }
