@@ -26,7 +26,7 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
         GBlurImageOps.gaussian(input, blurred, -1, radius, null);
         BufferedImage blurredImage = ConvertBufferedImage.convertTo(blurred, null, true);
 
-        File outputFile = new File("saved.png");
+        File outputFile = new File("blurredImage.png");
         ImageIO.write(blurredImage, "png", outputFile);
         return outputFile;
     }
