@@ -25,12 +25,14 @@ import com.cv.imagetron.service.def.ImageProcessingService;
 import georegression.geometry.ConvertRotation3D_F32;
 import georegression.struct.EulerType;
 import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 
+@Service
 public class ImageProcessingServiceImpl implements ImageProcessingService {
     @Override
     public File blurImage(File image) throws IOException {
