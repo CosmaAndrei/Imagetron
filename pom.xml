@@ -42,7 +42,6 @@
 			<version>3.0</version>
 		</dependency>
 
-
 		<!-- Image processing libraries -->
 		<dependency>
 			<groupId>org.bytedeco</groupId>

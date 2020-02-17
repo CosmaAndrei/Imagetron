@@ -5,8 +5,10 @@ import boofcv.abst.denoise.WaveletDenoiseFilter;
 import boofcv.alg.distort.*;
 import boofcv.alg.distort.pinhole.LensDistortionPinhole;
 import boofcv.alg.distort.universal.LensDistortionUniversalOmni;
+import boofcv.alg.enhance.EnhanceImageOps;
 import boofcv.alg.filter.blur.GBlurImageOps;
 import boofcv.alg.interpolate.InterpolatePixel;
+import boofcv.alg.interpolate.InterpolatePixelS;
 import boofcv.alg.interpolate.InterpolationType;
 import boofcv.factory.distort.FactoryDistort;
 import boofcv.factory.interpolate.FactoryInterpolation;
@@ -35,7 +37,7 @@ import java.io.IOException;
 @Service
 public class ImageProcessingServiceImpl implements ImageProcessingService {
     @Override
-    public File blurImage(File image) throws IOException {
+    public BufferedImage blurImage(File image) throws IOException {
         BufferedImage buffered = ImageIO.read(image);
         Planar<GrayU8> input = ConvertBufferedImage.convertFrom(buffered, true, ImageType.pl(3, GrayU8.class));
         Planar<GrayU8> blurred = input.createSameShape();
@@ -45,9 +47,7 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
         GBlurImageOps.gaussian(input, blurred, -1, radius, null);
         BufferedImage blurredImage = ConvertBufferedImage.convertTo(blurred, null, true);
 
-        File outputFile = new File("blurredImage.png");
-        ImageIO.write(blurredImage, "png", outputFile);
-        return outputFile;
+        return blurredImage;
     }
 
     /**
@@ -56,7 +56,7 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
      * images are currently supported.  Which is why the image  type is hard coded.
      */
     @Override
-    public File removeNoiseFrom(File image) throws IOException {
+    public BufferedImage removeNoiseFrom(File image) throws IOException {
         // load the input image, declare data structures
         GrayF32 input = UtilImageIO.loadImage(image.getAbsolutePath(), GrayF32.class);
 
@@ -74,14 +74,12 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
         // display the results
         BufferedImage denoisedImage = ConvertBufferedImage.convertTo(denoised, null);
 
-        File outputFile = new File("denoisedImage.png");
-        ImageIO.write(denoisedImage, "png", outputFile);
 
-        return outputFile;
+        return denoisedImage;
     }
 
     @Override
-    public Pair<File, File> convertToFishEyeToPineHole(File image) throws IOException {
+    public Pair<BufferedImage, BufferedImage> convertToFishEyeToPineHole(File image) throws IOException {
         // Path to image data and calibration data
         String fisheyePath = UtilIO.pathExample("fisheye/theta/");
 
@@ -122,13 +120,55 @@ public class ImageProcessingServiceImpl implements ImageProcessingService {
         distorter.apply(fisheyeImage, pinholeImage);
         BufferedImage bufferedPinhole1 = ConvertBufferedImage.convertTo(pinholeImage, null, true);
 
+        return Pair.of(bufferedPinhole0, bufferedPinhole1);
+    }
 
-        File left = new File("fishEyeImage.png");
-        ImageIO.write(bufferedPinhole0, "png", left);
+    @Override
+    public BufferedImage bilinearInterpolationOf(File image) throws IOException {
+        BufferedImage buffered = ImageIO.read(image);
 
-        File right = new File("fishEyeImage.png");
-        ImageIO.write(bufferedPinhole1, "png", right);
+        // For sake of simplicity assume it's a gray scale image.  Interpolation functions exist for planar and
+        // interleaved color images too
+        GrayF32 input = ConvertBufferedImage.convertFrom(buffered, (GrayF32) null);
+        GrayF32 scaled = input.createNew(500, 500 * input.height / input.width);
 
-        return Pair.of(left, right);
+        // Create the single band (gray scale) interpolation function for the input image
+        InterpolatePixelS<GrayF32> interp = FactoryInterpolation.
+                createPixelS(0, 255, InterpolationType.BILINEAR, BorderType.EXTENDED, input.getDataType());
+
+        // Tell it which image is being interpolated
+        interp.setImage(input);
+
+        // Manually apply scaling to the input image.  See FDistort() for a built in function which does
+        // the same thing and is slightly more efficient
+        BufferedImage out = ConvertBufferedImage.convertTo(scaled, null, true);
+
+        for (int y = 0; y < scaled.height; y++) {
+            // iterate using the 1D index for added performance.  Altertively there is the set(x,y) operator
+            int indexScaled = scaled.startIndex + y * scaled.stride;
+            float origY = y * input.height / (float) scaled.height;
+
+            for (int x = 0; x < scaled.width; x++) {
+                float origX = x * input.width / (float) scaled.width;
+
+                scaled.data[indexScaled++] = interp.get(origX, origY);
+            }
+
+            // Add the results to the output
+            out = ConvertBufferedImage.convertTo(scaled, null, true);
+        }
+
+        return out;
+    }
+
+    @Override
+    public BufferedImage sharpenImage(File image) throws IOException {
+        BufferedImage buffered = ImageIO.read(image);
+        GrayU8 gray = ConvertBufferedImage.convertFrom(buffered,(GrayU8)null);
+        GrayU8 adjusted = gray.createSameShape();
+
+       //Sharpen 8
+        EnhanceImageOps.sharpen8(gray, adjusted);
+        return ConvertBufferedImage.convertTo(adjusted,null);
     }
 }
